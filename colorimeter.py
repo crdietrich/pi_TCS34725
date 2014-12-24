@@ -8,6 +8,7 @@ from __future__ import division
 import time
 import colorsys
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 import numpy as np
 
 from Adafruit_TCS34725 import TCS34725
@@ -119,12 +120,7 @@ class Colorimeter(object):
 
         return R, G, B, H, L, S
 
-    def i2c_plot(self,
-                 xlim=(0, 1.5), ylim=(0, 1.0),
-                 x_fill=False, y_fill=False,
-                 polar=False,
-                 history=False,
-                 decimation=0.1):
+    def i2c_plot(self, rlim=1.5):
 
         """Plot in realtime color readings
 
@@ -138,20 +134,18 @@ class Colorimeter(object):
         """
 
         # Initialize the TCS34725 and use default integration time and gain
-        # tcs34725 = TCS34725(debug=True)
         tcs = TCS34725(integrationTime=0xEB, gain=0x01)
         tcs.setInterrupt(False)
 
-        # interactive mode on
-        plt.ion()
+        fig = plt.figure()
+        ax = plt.axes(polar=True)
+        ax.set_rmax(rlim)
 
-        fig = plt.figure(1)
-        ax = fig.add_subplot(111, polar=polar)
-
+        # white center
         R, G, B, H, L, S = self.CRGB_HLS(self.white_CRGB, units="1", white_correct=False)
-
         ax.scatter(H - self.white_HLS[0], self.white_HLS[2], s=100, marker="v", color='black')
 
+        # ideal color locations
         A_array = [self.red_true,
                    self.orange_true,
                    self.yellow_true,
@@ -169,88 +163,37 @@ class Colorimeter(object):
         for n in range(0, len(A_array)):
             R, G, B, H, L, S = self.CRGB_HLS(A_array[n], units="radians", white_correct=True)
             cc = self.normalize_triple(R, G, B)
-            #print R, G, B, "|", H, L, S, "||", cc
             S = 0.4
             ax.scatter(H, S, marker="o", s=100, color=cc)
 
-        ax.set_rmax(1.0)
-
+        # plot to update
         # Returns a tuple of line objects, thus the comma
         p1, = ax.plot(None, None, linestyle='None', marker="o", markersize=20, color="red")
-        p2, = ax.plot(None, None, linestyle='None', marker="x", markersize=20, color="black")
 
-        if polar:
-            ax.set_rmax(xlim[1])
-        else:
-            ax.set_xlim(xlim)
-            ax.set_ylim(ylim)
+        def init_run():
+            p1.set_data(None, None)
+            return p1,
 
-        def update_point_history(_p, _x, _y):
-            _p.set_xdata(np.append(_p.get_xdata(), _x))
-            _p.set_ydata(np.append(_p.get_ydata(), _y))
-            plt.draw()
+        def run(_n, p):
+            """Function called by matplotlib.animation.FuncAnimation
+            """
+            data = tcs.getRawData()
+            data = [float(data['c']), float(data['r']), float(data['g']), float(data['b'])]
+            R, G, B, H, L, S = self.CRGB_HLS(data, units="radians", white_correct=True)
+            p.set_data(H, S)
+            p.set_markerfacecolor(self.normalize_triple(R, G, B))
+            return p,
 
-        def update_point(_p, _x, _y):
-            _p.set_xdata(_x)
-            _p.set_ydata(_y)
-            plt.draw()
+        ani = animation.FuncAnimation(fig=fig,
+                                      func=run,
+                                      init_func=init_run,
+                                      fargs=(p1,),
+                                      frames=20,
+                                      blit=True,
+                                      interval=10,
+                                      repeat=True)
 
-        ## start data collection
-        while True:
-
-            # exit if the figure is closed
-            if plt.fignum_exists(1):
-
-                t = time.time()
-                data = tcs.getRawData()
-                print '0,%s' % str(time.time() - t)
-                t = time.time()
-                try:
-                    data = [float(data['c']), float(data['r']), float(data['g']), float(data['b'])]
-
-                    print '1,%s' % str(time.time() - t)
-                    t = time.time()
-                    if len(data) == 4:
-
-                        R, G, B, H, L, S = self.CRGB_HLS(data, units="radians", white_correct=True)
-                        print '2,%s' % str(time.time() - t)
-                        t = time.time()
-                        if x_fill is not False:
-                            x = x_fill
-                        else:
-                            x = H
-                        if y_fill is not False:
-                            y = y_fill
-                        else:
-                            y = S
-                        print '3,%s' % str(time.time() - t)
-                        t = time.time()
-                        # 2nd slowest!
-                        update_point(p1, x, y)
-                        print '4,%s' % str(time.time() - t)
-                        t = time.time()
-                        cc = self.normalize_triple(R, G, B)
-                        p1.set_markerfacecolor(cc)
-                        print '5,%s' % str(time.time() - t)
-                        t = time.time()
-                        if history:
-                            update_point_history(p2, x, y)
-
-                        # this is needed for matplotlib to refresh correctly/fast enough
-                        # Note: section is the slowest here
-                        # This can be used for crude animation. For more complex
-                        # animation, see :mod:`matplotlib.animation`.
-                        time.sleep(decimation)
-                        plt.pause(0.001)
-                        print '6,%s' % str(time.time() - t)
-                        t = time.time()
-                except ValueError:
-                    plt.pause(decimation)
-                    continue
-            else:
-                plt.close()
-                break
-
+        plt.show()
 
 if __name__ == '__main__':
     AF_olympic_2_white = np.array([11219, 4001, 4114, 2606,
@@ -260,7 +203,6 @@ if __name__ == '__main__':
                                    11220, 4002, 4114, 2606])
 
     c = Colorimeter()
-    #c.white_CRGB = AF_olympic_2_white
+    c.white_CRGB = AF_olympic_2_white
     c.set_white()
-    c.i2c_plot(xlim=[0, 0.5], ylim=[0, 10],
-               polar=True, y_fill=False, history=False, decimation=0.1)
+    c.i2c_plot(rlim=1.5)
