@@ -161,7 +161,7 @@ class Colorimeter(object):
                    ]
 
         for n in range(0, len(A_array)):
-            R, G, B, H, L, S = self.CRGB_HLS(A_array[n], units="radians", white_correct=True)
+            R, G, B, H, L, S = self.CRGB_HLS(A_array[n], units="radians", white_correct=False)
             cc = self.normalize_triple(R, G, B)
             S = 0.4
             ax.scatter(H, S, marker="o", s=100, color=cc)
@@ -179,9 +179,9 @@ class Colorimeter(object):
             """
             data = tcs.getRawData()
             data = [float(data['c']), float(data['r']), float(data['g']), float(data['b'])]
-            R, G, B, H, L, S = self.CRGB_HLS(data, units="radians", white_correct=True)
-            p.set_data(H, S)
-            p.set_markerfacecolor(self.normalize_triple(R, G, B))
+            _R, _G, _B, _H, _L, _S = self.CRGB_HLS(data, units="radians", white_correct=True)
+            p.set_data(_H, _S)
+            p.set_markerfacecolor(self.normalize_triple(_R, _G, _B))
             return p,
 
         ani = animation.FuncAnimation(fig=fig,
@@ -203,6 +203,7 @@ if __name__ == '__main__':
                                    11220, 4002, 4114, 2606])
 
     c = Colorimeter()
+    # commenting this out get the ideal colors to be centered correctly
     c.white_CRGB = AF_olympic_2_white
     c.set_white()
     c.i2c_plot(rlim=1.5)
